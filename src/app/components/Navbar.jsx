@@ -1,47 +1,68 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
-import { signOut } from 'next-auth/react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faUser, faShoppingCart } from '@fortawesome/free-solid-svg-icons'
+import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { signOut, useSession } from "next-auth/react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faUser, faShoppingCart } from "@fortawesome/free-solid-svg-icons";
 
-function Navbar({ session }) {
-  const [isShopDropdownOpen, setShopDropdownOpen] = useState(false)
-  const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false)
+function Navbar() {
+  const { data: session } = useSession();
+  const [cartCount, setCartCount] = useState(0);
+  const [isShopDropdownOpen, setShopDropdownOpen] = useState(false);
+  const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
-  const shopRef = useRef(null)
-  const profileRef = useRef(null)
+  const shopRef = useRef(null);
+  const profileRef = useRef(null);
 
   const toggleShopDropdown = () => {
-    setShopDropdownOpen(!isShopDropdownOpen)
-    setProfileDropdownOpen(false)
-  }
+    setShopDropdownOpen(!isShopDropdownOpen);
+    setProfileDropdownOpen(false);
+  };
 
   const toggleProfileDropdown = () => {
-    setProfileDropdownOpen(!isProfileDropdownOpen)
-    setShopDropdownOpen(false)
-  }
+    setProfileDropdownOpen(!isProfileDropdownOpen);
+    setShopDropdownOpen(false);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
-        shopRef.current && !shopRef.current.contains(event.target) &&
-        profileRef.current && !profileRef.current.contains(event.target)
+        shopRef.current &&
+        !shopRef.current.contains(event.target) &&
+        profileRef.current &&
+        !profileRef.current.contains(event.target)
       ) {
-        setShopDropdownOpen(false)
-        setProfileDropdownOpen(false)
+        setShopDropdownOpen(false);
+        setProfileDropdownOpen(false);
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
+    };
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [])
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // ดึงข้อมูลจำนวนสินค้าในตะกร้า
+  useEffect(() => {
+    const fetchCart = async () => {
+      if (session?.user?.email) {
+        try {
+          const res = await fetch(`/api/cart?userId=${session.user.email}`);
+          const data = await res.json();
+          const total = data.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+          setCartCount(total);
+        } catch (error) {
+          console.error("โหลดจำนวนตะกร้าไม่สำเร็จ:", error);
+        }
+      }
+    };
+    fetchCart();
+  }, [session]);
 
   return (
-    <header className="bg-black text-white shadow-md mt-4">
+    <header className="bg-gray-800 text-white shadow-md mt-4">
       <div className="container mx-auto flex items-center justify-between py-4 px-6">
         {/* Logo */}
         <h1 className="text-2xl font-bold">
@@ -50,7 +71,7 @@ function Navbar({ session }) {
 
         {/* Navbar Links */}
         <nav className="flex items-center space-x-8">
-          <Link href="/" className="text-lg hover:underline">HOME</Link>
+          <Link href="/welcome" className="text-lg hover:underline">HOME</Link>
 
           {/* SHOP Dropdown */}
           <div className="relative" ref={shopRef}>
@@ -65,25 +86,53 @@ function Navbar({ session }) {
                 <div className="p-4">
                   <h3 className="font-bold text-lg mb-2">SHOP BY Studio</h3>
                   <ul className="space-y-1">
-                    <li><Link href="/shop/studio/tsume" className="hover:underline">Tsume Studio</Link></li>
-                    <li><Link href="/shop/studio/xm" className="hover:underline">XM Studios</Link></li>
-                    <li><Link href="/shop/studio/queen" className="hover:underline">Queen Studios</Link></li>
+                    <li>
+                      <Link href="/shop/studio/tsume" className="hover:underline">
+                        Tsume Studio
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/shop/studio/xm" className="hover:underline">
+                        XM Studios
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/shop/studio/queen" className="hover:underline">
+                        Queen Studios
+                      </Link>
+                    </li>
                   </ul>
                 </div>
                 <hr className="border-gray-600" />
                 <div className="p-4">
                   <h3 className="font-bold text-lg mb-2">SHOP BY License</h3>
                   <ul className="space-y-1">
-                    <li><Link href="/shop/license/onepiece" className="hover:underline">One Piece</Link></li>
-                    <li><Link href="/shop/license/naruto" className="hover:underline">Naruto</Link></li>
+                    <li>
+                      <Link href="/shop/license/onepiece" className="hover:underline">
+                        One Piece
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/shop/license/naruto" className="hover:underline">
+                        Naruto
+                      </Link>
+                    </li>
                   </ul>
                 </div>
                 <hr className="border-gray-600" />
                 <div className="p-4">
                   <h3 className="font-bold text-lg mb-2">SHOP BY Scale</h3>
                   <ul className="space-y-1">
-                    <li><Link href="/shop/scale/1-6" className="hover:underline">1/6 Scale</Link></li>
-                    <li><Link href="/shop/scale/1-4" className="hover:underline">1/4 Scale</Link></li>
+                    <li>
+                      <Link href="/shop/scale/1-6" className="hover:underline">
+                        1/6 Scale
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/shop/scale/1-4" className="hover:underline">
+                        1/4 Scale
+                      </Link>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -116,21 +165,28 @@ function Navbar({ session }) {
                   </div>
                 ) : (
                   <div className="p-4">
-                    <Link href="/login" className="hover:underline block text-center">Login</Link>
+                    <Link href="/login" className="hover:underline block text-center">
+                      Login
+                    </Link>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Cart Icon */}
-          <Link href="/cart" className="hover:underline">
+          {/* Cart Icon with Count */}
+          <Link href="/cart" className="relative hover:underline">
             <FontAwesomeIcon icon={faShoppingCart} />
+            {cartCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full">
+                {cartCount}
+              </span>
+            )}
           </Link>
         </div>
       </div>
     </header>
-  )
+  );
 }
 
-export default Navbar
+export default Navbar;

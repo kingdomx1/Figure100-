@@ -4,6 +4,7 @@ export default function AdminSidebar({ active, setActive, onLogout }) {
   const menuItems = [
     { key: "dashboard", label: "หน้าหลัก Dashboard" },
     { key: "products", label: "จัดการสินค้า" },
+    { key: "order", label: "จัดการคำสั่งซื้อ" }, // ต้องมีบรรทัดนี้
     { key: "discounts", label: "จัดการส่วนลดสินค้า" },
   ];
 
@@ -21,6 +22,7 @@ export default function AdminSidebar({ active, setActive, onLogout }) {
           {item.label}
         </div>
       ))}
+
       <div
         onClick={onLogout}
         className="p-3 rounded cursor-pointer bg-red-500 hover:bg-red-600 mt-10"

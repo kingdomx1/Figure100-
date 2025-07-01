@@ -91,6 +91,9 @@ export default function AddProductForm() {
           id: editProduct._id,
           updatedData: {
             name: editProduct.name,
+            studio: editProduct.studio,
+            title: editProduct.title,
+            scale: editProduct.scale,
             price: editProduct.price,
             stock: editProduct.stock,
             description: editProduct.description,
@@ -199,6 +202,27 @@ export default function AddProductForm() {
               className="border p-2 w-full rounded"
             />
             <input
+              type="text"
+              placeholder="Studio"
+              value={editProduct.studio}
+              onChange={(e) => setEditProduct({ ...editProduct, studio: e.target.value })}
+              className="border p-2 w-full rounded"
+            />
+            <input
+              type="text"
+              placeholder="Title"
+              value={editProduct.title}
+              onChange={(e) => setEditProduct({ ...editProduct, title: e.target.value })}
+              className="border p-2 w-full rounded"
+            />
+              <input
+              type="text"
+              placeholder="Scale"
+              value={editProduct.scale}
+              onChange={(e) => setEditProduct({ ...editProduct, scale: e.target.value })}
+              className="border p-2 w-full rounded"
+            />
+            <input
               type="number"
               placeholder="ราคา"
               value={editProduct.price}
@@ -255,6 +279,7 @@ export default function AddProductForm() {
 
               <h3 className="text-lg font-semibold">{product.name}</h3>
               <p className="text-gray-600">{product.studio} - {product.title}</p>
+              <p className="text-gray-600">Scale {product.scale}</p>
               <p className="text-gray-800 font-bold">{product.price} บาท</p>
               <p className="text-sm text-gray-500">คงเหลือ {product.stock} ชิ้น</p>
               <p className="mt-2 text-gray-700">{product.description}</p>
