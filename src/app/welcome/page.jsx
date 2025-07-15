@@ -1,69 +1,82 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import Container from "../components/Container";
 import Navbar from "../components/Navbar";
 
-
-export default function Home() {
+export default function WelcomePage() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+
   const [products, setProducts] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null); // สำหรับ modal
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   if (!session) redirect("/login");
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await fetch("/api/admin/products");
+        const studio = searchParams.get("studio");
+        const title = searchParams.get("title");
+        const scale = searchParams.get("scale");
+
+        let query = "";
+        if (studio) query += `studio=${encodeURIComponent(studio)}&`;
+        if (title) query += `title=${encodeURIComponent(title)}&`;
+        if (scale) query += `scale=${encodeURIComponent(scale)}&`;
+
+        const res = await fetch(`/api/admin/products?${query}`);
         const data = await res.json();
         setProducts(data);
       } catch (error) {
         console.error("เกิดข้อผิดพลาดในการโหลดสินค้า:", error);
       }
     };
+
     fetchProducts();
-  }, []);
+  }, [searchParams]);
 
   return (
     <main className="bg-black min-h-screen">
       <Navbar />
-
       <Container>
         <h1 className="text-white text-3xl font-bold text-center py-10">
           สินค้าแนะนำ
         </h1>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-9">
-          {products.map((product) => (
-            <div
-              key={product._id}
-              className="relative group rounded-xl overflow-hidden shadow-md cursor-pointer bg-white transition-transform duration-300 hover:scale-105"
-              onClick={() => setSelectedProduct(product)}
-            >
-              {product.images && product.images.length > 0 && (
-                <Image
-                  src={product.images[0]}
-                  alt={product.name}
-                  width={400}
-                  height={300}
-                  className="w-full h-64 object-cover rounded-xl transition-all duration-300"
-                />
-              )}
-              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-center py-2 opacity-0 group-hover:opacity-100 transition duration-300">
-                {product.name}
+        {products.length === 0 ? (
+          <p className="text-center text-white">ไม่พบสินค้าที่ตรงกับหมวดหมู่</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-9">
+            {products.map((product) => (
+              <div
+                key={product._id}
+                className="relative group rounded-xl overflow-hidden shadow-md cursor-pointer bg-white transition-transform duration-300 hover:scale-105"
+                onClick={() => setSelectedProduct(product)}
+              >
+                {product.images?.[0] && (
+                  <Image
+                    src={product.images[0]}
+                    alt={product.name}
+                    width={400}
+                    height={300}
+                    className="w-full h-64 object-cover rounded-xl transition-all duration-300"
+                  />
+                )}
+                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-center py-2 opacity-0 group-hover:opacity-100 transition duration-300">
+                  {product.name}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Container>
 
-      
-
-      {/* 🔽 Modal แสดงรายละเอียดสินค้า */}
+      {/* Modal แสดงรายละเอียดสินค้า */}
       {selectedProduct && (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center">
           <div className="bg-white p-6 rounded-lg max-w-md w-full relative">
@@ -88,19 +101,49 @@ export default function Home() {
             <p className="text-gray-600 mb-1">
               Studio: {selectedProduct.studio} - {selectedProduct.title}
             </p>
-            <p className="text-gray-800 font-semibold">
-              ราคา: {selectedProduct.price} บาท
-            </p>
+
+            {/* ราคาพร้อมส่วนลด */}
+            {selectedProduct.discountPercent > 0 ? (
+              <div className="mb-1">
+                <p className="text-red-600 font-semibold">
+                  🔻 ลด {selectedProduct.discountPercent}%
+                </p>
+                <p className="text-gray-400 line-through">
+                  ราคาเดิม: {selectedProduct.price.toLocaleString()} บาท
+                </p>
+                <p className="text-green-600 font-bold text-lg">
+                  ราคาหลังหักส่วนลด:{" "}
+                  {(
+                    selectedProduct.price *
+                    (1 - selectedProduct.discountPercent / 100)
+                  ).toLocaleString()}{" "}
+                  บาท
+                </p>
+              </div>
+            ) : (
+              <p className="text-gray-800 font-semibold mb-1">
+                ราคา: {selectedProduct.price.toLocaleString()} บาท
+              </p>
+            )}
+
             <p className="text-gray-600">คงเหลือ: {selectedProduct.stock} ชิ้น</p>
             <p className="mt-2 text-gray-700">{selectedProduct.description}</p>
 
-            {/* ✅ ปุ่มใส่ตะกร้าแบบ MongoDB */}
+            {/* ปุ่มใส่ตะกร้า */}
             <button
               onClick={async () => {
                 if (!session?.user?.email) {
                   alert("กรุณาเข้าสู่ระบบก่อน");
                   return;
                 }
+
+                const discount =
+                  selectedProduct.discountPercent > 0
+                    ? Math.round(
+                        selectedProduct.price *
+                          (1 - selectedProduct.discountPercent / 100)
+                      )
+                    : selectedProduct.price;
 
                 try {
                   const res = await fetch("/api/cart", {
@@ -113,7 +156,9 @@ export default function Home() {
                       product: {
                         productId: selectedProduct._id,
                         name: selectedProduct.name,
-                        price: selectedProduct.price,
+                        price: discount,
+                        originalPrice: selectedProduct.price,
+                        discountPercent: selectedProduct.discountPercent,
                         image: selectedProduct.images?.[0],
                         quantity: 1,
                       },

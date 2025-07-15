@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import AdminSidebar from "../../components/AdminSidebar";
 import ProductsManager from "../../components/ProductsManager";
 import OrdersManager from "../../components/OrdersManager";
+import Dashboard from "../../components/Dashboard";
+import DiscountManager from "../../components/DiscountManager";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -22,10 +24,10 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className="flex-1 p-10">
-        {active === "dashboard" && <div className="text-3xl font-bold">🖥️ หน้าหลัก Dashboard</div>}
+        {active === "dashboard" && <Dashboard />}
         {active === "products" && <ProductsManager />}
         {active === "order" && <OrdersManager />}
-        {active === "discounts" && <div className="text-3xl font-bold">🏷️ จัดการส่วนลดสินค้า</div>}
+        {active === "discounts" && <DiscountManager/>}
       </main>
     </div>
   );

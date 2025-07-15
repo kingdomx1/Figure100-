@@ -5,13 +5,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Navbar from "../components/Navbar";
 
-
 export default function CartPage() {
   const { data: session } = useSession();
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // โหลดข้อมูลตะกร้า
   const fetchCart = async () => {
     setLoading(true);
     try {
@@ -28,7 +26,6 @@ export default function CartPage() {
     if (session) fetchCart();
   }, [session]);
 
-  // ลบสินค้า
   const removeItem = async (productId) => {
     const res = await fetch("/api/cart/delete", {
       method: "POST",
@@ -76,9 +73,23 @@ export default function CartPage() {
                     />
                     <div>
                       <h2 className="font-semibold">{item.name}</h2>
-                      <p className="text-gray-300">
-                        {item.price.toLocaleString()} บาท × {item.quantity}
-                      </p>
+                      {item.discountPercent > 0 ? (
+                        <>
+                          <p className="text-sm text-gray-400 line-through">
+                            {item.originalPrice.toLocaleString()} บาท
+                          </p>
+                          <p className="text-green-400 font-medium">
+                            {item.price.toLocaleString()} บาท × {item.quantity}{" "}
+                            <span className="text-yellow-400 ml-2">
+                              🔻 ลด {item.discountPercent}%
+                            </span>
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-gray-300">
+                          {item.price.toLocaleString()} บาท × {item.quantity}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <button
@@ -96,11 +107,12 @@ export default function CartPage() {
                 รวมทั้งหมด: {getTotal().toLocaleString()} บาท
               </h2>
 
-                <button
-                   onClick={() => window.location.href = "/checkout"}
-                   className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded text-lg">
-                    สั่งซื้อ
-                </button>
+              <button
+                onClick={() => window.location.href = "/checkout"}
+                className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded text-lg"
+              >
+                สั่งซื้อ
+              </button>
             </div>
           </>
         )}

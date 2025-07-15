@@ -13,6 +13,7 @@
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
     "bcryptjs": "^2.4.3",
+    "chart.js": "^4.5.0",
     "gridfs-stream": "^1.1.1",
     "mongoose": "^8.14.0",
     "multer": "^1.4.5-lts.2",
@@ -20,6 +21,7 @@
     "next-auth": "^4.24.6",
     "next-connect": "^1.0.0",
     "react": "^18",
+    "react-chartjs-2": "^5.3.0",
     "react-dom": "^18",
     "uuid": "^11.1.0"
   },
