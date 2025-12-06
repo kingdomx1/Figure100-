@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, redirect } from "next/navigation";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { redirect } from "next/navigation";
 import Container from "../components/Container";
 import Navbar from "../components/Navbar";
 
@@ -14,6 +13,7 @@ export default function WelcomePage() {
 
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [quantity, setQuantity] = useState(1); // จำนวนที่จะใส่ตะกร้า
 
   if (!session) redirect("/login");
 
@@ -39,6 +39,81 @@ export default function WelcomePage() {
 
     fetchProducts();
   }, [searchParams]);
+
+  // เมื่อเปิด modal สินค้า ให้รีเซ็ต quantity เป็น 1
+  useEffect(() => {
+    if (selectedProduct) setQuantity(1);
+  }, [selectedProduct]);
+
+  const inc = () => {
+    if (!selectedProduct) return;
+    const stock = selectedProduct.stock ?? Infinity;
+    setQuantity((q) => {
+      const next = q + 1;
+      if (next > stock) {
+        alert(`ไม่สามารถเพิ่มได้ — มีสต็อกเพียง ${stock} ชิ้น`);
+        return q;
+      }
+      return next;
+    });
+  };
+
+  const dec = () => {
+    setQuantity((q) => Math.max(1, q - 1));
+  };
+
+  const handleAddToCart = async () => {
+    if (!session?.user?.email) {
+      alert("กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
+    if (!selectedProduct) return;
+
+    const stock = selectedProduct.stock ?? Infinity;
+    if (quantity > stock) {
+      alert(`จำนวนที่เลือกมากกว่าจำนวนสต็อก (มี ${stock} ชิ้น)`);
+      return;
+    }
+
+    const discountPercent = selectedProduct.discountPercent || 0;
+    const discountedPrice = discountPercent > 0
+      ? Math.round(selectedProduct.price * (1 - discountPercent / 100))
+      : selectedProduct.price;
+
+    const productPayload = {
+      productId: selectedProduct._id,
+      name: selectedProduct.name,
+      price: discountedPrice,
+      originalPrice: selectedProduct.price,
+      discountPercent,
+      image: selectedProduct.images?.[0] || "",
+      quantity,
+    };
+
+    try {
+      const res = await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.email,
+          product: productPayload,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("เพิ่มสินค้าไม่สำเร็จ:", text);
+        alert("ไม่สามารถเพิ่มสินค้าได้ กรุณาลองใหม่");
+        return;
+      }
+
+      alert("เพิ่มสินค้าลงตะกร้าแล้ว");
+      setSelectedProduct(null);
+    } catch (err) {
+      console.error("Error add to cart:", err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
+    }
+  };
 
   return (
     <main className="bg-black min-h-screen">
@@ -78,8 +153,8 @@ export default function WelcomePage() {
 
       {/* Modal แสดงรายละเอียดสินค้า */}
       {selectedProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full relative">
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full relative text-black">
             <button
               onClick={() => setSelectedProduct(null)}
               className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl"
@@ -93,7 +168,7 @@ export default function WelcomePage() {
                 alt={selectedProduct.name}
                 width={400}
                 height={250}
-                className="rounded mb-4"
+                className="rounded mb-4 object-contain w-full h-56"
               />
             )}
 
@@ -113,9 +188,9 @@ export default function WelcomePage() {
                 </p>
                 <p className="text-green-600 font-bold text-lg">
                   ราคาหลังหักส่วนลด:{" "}
-                  {(
+                  {Math.round(
                     selectedProduct.price *
-                    (1 - selectedProduct.discountPercent / 100)
+                      (1 - selectedProduct.discountPercent / 100)
                   ).toLocaleString()}{" "}
                   บาท
                 </p>
@@ -126,55 +201,50 @@ export default function WelcomePage() {
               </p>
             )}
 
-            <p className="text-gray-600">คงเหลือ: {selectedProduct.stock} ชิ้น</p>
-            <p className="mt-2 text-gray-700">{selectedProduct.description}</p>
+            <p className="text-gray-600 mb-3">คงเหลือ: {selectedProduct.stock} ชิ้น</p>
+            <p className="mt-2 text-gray-700 mb-4">{selectedProduct.description}</p>
+
+            {/* จำนวน (+ / -) */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center border rounded overflow-hidden">
+                <button
+                  onClick={dec}
+                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300"
+                  aria-label="ลดจำนวน"
+                >
+                  −
+                </button>
+                <div className="px-4 py-2 min-w-[48px] text-center font-semibold bg-white">
+                  {quantity}
+                </div>
+                <button
+                  onClick={inc}
+                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300"
+                  aria-label="เพิ่มจำนวน"
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="text-sm text-gray-500">
+                <div>รวม:{" "}<span className="font-semibold">
+                  {(
+                    (selectedProduct.discountPercent > 0
+                      ? Math.round(
+                          selectedProduct.price *
+                            (1 - selectedProduct.discountPercent / 100)
+                        )
+                      : selectedProduct.price) * quantity
+                  ).toLocaleString()} บาท
+                </span></div>
+                <div className="text-xs text-gray-400"></div>
+              </div>
+            </div>
 
             {/* ปุ่มใส่ตะกร้า */}
             <button
-              onClick={async () => {
-                if (!session?.user?.email) {
-                  alert("กรุณาเข้าสู่ระบบก่อน");
-                  return;
-                }
-
-                const discount =
-                  selectedProduct.discountPercent > 0
-                    ? Math.round(
-                        selectedProduct.price *
-                          (1 - selectedProduct.discountPercent / 100)
-                      )
-                    : selectedProduct.price;
-
-                try {
-                  const res = await fetch("/api/cart", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      userId: session.user.email,
-                      product: {
-                        productId: selectedProduct._id,
-                        name: selectedProduct.name,
-                        price: discount,
-                        originalPrice: selectedProduct.price,
-                        discountPercent: selectedProduct.discountPercent,
-                        image: selectedProduct.images?.[0],
-                        quantity: 1,
-                      },
-                    }),
-                  });
-
-                  if (!res.ok) throw new Error("ไม่สามารถเพิ่มสินค้าได้");
-
-                  alert("เพิ่มสินค้าลงตะกร้าแล้ว");
-                  setSelectedProduct(null);
-                } catch (error) {
-                  console.error("เกิดข้อผิดพลาด:", error);
-                  alert("เพิ่มสินค้าไม่สำเร็จ");
-                }
-              }}
-              className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded w-full"
+              onClick={handleAddToCart}
+              className="mt-2 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded w-full"
             >
               ใส่ตะกร้า
             </button>

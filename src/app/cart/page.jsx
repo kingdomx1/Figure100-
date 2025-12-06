@@ -40,8 +40,22 @@ export default function CartPage() {
     }
   };
 
-  const getTotal = () =>
-    cart?.items?.reduce((sum, item) => sum + item.price * item.quantity, 0) || 0;
+  //  ราคาสินค้ารวมทั้งหมด
+  const subtotal =
+    cart?.items?.reduce(
+      (sum, item) => sum + Number(item.price) * Number(item.quantity),
+      0
+    ) || 0;
+
+  //  ค่าส่งสินค้า "เหมา 200 บาท"
+  const shippingFee = cart?.items?.length > 0 ? 200 : 0;
+
+  //  VAT 7% คิดจาก (สินค้า + ค่าส่ง)
+  const vatRate = 0.07;
+  const vatAmount = Number(((subtotal + shippingFee) * vatRate).toFixed(2));
+
+  //  ราคารวมทั้งหมด
+  const grandTotal = Number((subtotal + shippingFee + vatAmount).toFixed(2));
 
   if (!session) return <p className="text-center text-white">กรุณาเข้าสู่ระบบ</p>;
   if (loading || !cart) return <p className="text-center text-white">กำลังโหลด...</p>;
@@ -57,6 +71,7 @@ export default function CartPage() {
           <p className="text-center text-gray-400">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
           <>
+            {/* รายการสินค้า */}
             <div className="space-y-6">
               {cart.items.map((item) => (
                 <div
@@ -69,17 +84,18 @@ export default function CartPage() {
                       alt={item.name}
                       width={80}
                       height={80}
-                      className="rounded shadow"
+                      className="rounded shadow object-cover"
                     />
                     <div>
                       <h2 className="font-semibold">{item.name}</h2>
+
                       {item.discountPercent > 0 ? (
                         <>
                           <p className="text-sm text-gray-400 line-through">
                             {item.originalPrice.toLocaleString()} บาท
                           </p>
                           <p className="text-green-400 font-medium">
-                            {item.price.toLocaleString()} บาท × {item.quantity}{" "}
+                            {item.price.toLocaleString()} บาท × {item.quantity}
                             <span className="text-yellow-400 ml-2">
                               🔻 ลด {item.discountPercent}%
                             </span>
@@ -92,6 +108,7 @@ export default function CartPage() {
                       )}
                     </div>
                   </div>
+
                   <button
                     onClick={() => removeItem(item.productId)}
                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-1 rounded text-sm"
@@ -102,16 +119,33 @@ export default function CartPage() {
               ))}
             </div>
 
-            <div className="text-right mt-8 border-t border-gray-700 pt-4">
-              <h2 className="text-xl font-bold">
-                รวมทั้งหมด: {getTotal().toLocaleString()} บาท
-              </h2>
+            {/* สรุปยอด */}
+            <div className="text-right mt-8 bg-white/5 p-4 rounded border border-gray-700">
+              <div className="flex justify-between text-gray-300 mb-2">
+                <span>ยอดรวมสินค้า</span>
+                <span>{subtotal.toLocaleString()} บาท</span>
+              </div>
+
+              <div className="flex justify-between text-gray-300 mb-2">
+                <span>ค่าส่งสินค้า</span>
+                <span>{shippingFee.toLocaleString()} บาท</span>
+              </div>
+
+              <div className="flex justify-between text-gray-300 mb-2">
+                <span>VAT 7%</span>
+                <span>{vatAmount.toLocaleString()} บาท</span>
+              </div>
+
+              <div className="border-t border-gray-600 mt-3 pt-3 flex justify-between text-lg font-bold text-white">
+                <span>ยอดชำระทั้งหมด</span>
+                <span>{grandTotal.toLocaleString()} บาท</span>
+              </div>
 
               <button
-                onClick={() => window.location.href = "/checkout"}
-                className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded text-lg"
+                onClick={() => (window.location.href = "/checkout")}
+                className="mt-6 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded text-lg"
               >
-                สั่งซื้อ
+                ดำเนินการชำระเงิน
               </button>
             </div>
           </>

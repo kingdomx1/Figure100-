@@ -7,11 +7,11 @@ import { useRouter } from "next/navigation";
 import Container from "./components/Container";
 import Navbar from "./components/Navbar";
 
-
 export default function Home() {
   const { data: session } = useSession();
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [localQty, setLocalQty] = useState(1);
   const router = useRouter();
 
   useEffect(() => {
@@ -26,6 +26,154 @@ export default function Home() {
     };
     fetchProducts();
   }, []);
+
+  // เมื่อเปิด modal ให้รีเซ็ตจำนวนเป็น 1
+  useEffect(() => {
+    if (selectedProduct) setLocalQty(1);
+  }, [selectedProduct]);
+
+  // อ่านตะกร้าของผู้ใช้ (ถ้าต้องการใช้ตรวจสอบ)
+  const fetchCart = async () => {
+    try {
+      if (!session?.user?.email) return null;
+      const res = await fetch(`/api/cart?userId=${session.user.email}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      console.error("fetchCart error:", err);
+      return null;
+    }
+  };
+
+  // เพิ่มทีละ 1 เข้าตะกร้า
+  const handleIncrease = async () => {
+    if (!selectedProduct) return;
+    if (!session?.user?.email) {
+      router.push("/login");
+      return;
+    }
+
+    // ตรวจสต็อก: ดูจำนวนที่อยู่ในตะกร้าแล้วเทียบกับ stock
+    const cart = await fetchCart();
+    const cartItem = cart?.items?.find((it) => it.productId === selectedProduct._id);
+    const currentInCart = cartItem?.quantity || 0;
+    const currentStock = selectedProduct.stock ?? Infinity;
+
+    if (currentInCart + 1 > currentStock) {
+      alert(`ไม่สามารถเพิ่มได้ — สต็อกมีเพียง ${currentStock} ชิ้น`);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: session.user.email,
+          product: {
+            productId: selectedProduct._id,
+            name: selectedProduct.name,
+            price:
+              selectedProduct.discountPercent > 0
+                ? Math.round(
+                    selectedProduct.price * (1 - selectedProduct.discountPercent / 100)
+                  )
+                : selectedProduct.price,
+            originalPrice: selectedProduct.price,
+            discountPercent: selectedProduct.discountPercent || 0,
+            image: selectedProduct.images?.[0] || "",
+            quantity: 1, // เพิ่มทีละ 1
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        console.error("เพิ่มสินค้าไม่สำเร็จ:", await res.text());
+        alert("ไม่สามารถเพิ่มสินค้าได้ ลองใหม่");
+        return;
+      }
+
+      // อัปเดตจำนวนที่แสดงใน modal
+      setLocalQty((q) => q + 1);
+    } catch (err) {
+      console.error("Error add to cart:", err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
+    }
+  };
+
+  
+  const handleDecrease = async () => {
+    if (!selectedProduct) return;
+    if (!session?.user?.email) {
+      router.push("/login");
+      return;
+    }
+
+    const cart = await fetchCart();
+    const cartItem = cart?.items?.find((it) => it.productId === selectedProduct._id);
+    const currentInCart = cartItem?.quantity || 0;
+
+    if (currentInCart <= 0) {
+      // ถ้ายังไม่มีในตะกร้า ให้ลดแค่ localQty (ไม่ให้ต่ำกว่า 1)
+      setLocalQty((q) => Math.max(1, q - 1));
+      return;
+    }
+
+    const newQty = currentInCart - 1;
+
+    try {
+      // ลบรายการทั้งหมดก่อน (ตาม API  POST /api/cart/delete)
+      const delRes = await fetch("/api/cart/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: session.user.email, productId: selectedProduct._id }),
+      });
+
+      if (!delRes.ok) {
+        console.error("ลบรายการจากตะกร้าไม่สำเร็จ");
+        alert("ไม่สามารถอัพเดตตะกร้าได้ ลองใหม่");
+        return;
+      }
+
+      // ถ้ายังมีจำนวนเหลือ ให้เพิ่มกลับด้วย newQty
+      if (newQty > 0) {
+        const addRes = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.user.email,
+            product: {
+              productId: selectedProduct._id,
+              name: selectedProduct.name,
+              price:
+                selectedProduct.discountPercent > 0
+                  ? Math.round(
+                      selectedProduct.price * (1 - selectedProduct.discountPercent / 100)
+                    )
+                  : selectedProduct.price,
+              originalPrice: selectedProduct.price,
+              discountPercent: selectedProduct.discountPercent || 0,
+              image: selectedProduct.images?.[0] || "",
+              quantity: newQty,
+            },
+          }),
+        });
+
+        if (!addRes.ok) {
+          console.error("เพิ่มกลับตะกร้าไม่สำเร็จ");
+          alert("อัพเดตตะกร้าไม่สำเร็จ ลองใหม่");
+          return;
+        }
+      }
+
+      // อัปเดตจำนวนที่แสดงใน modal (local)
+      setLocalQty((q) => Math.max(1, q - 1));
+    } catch (err) {
+      console.error("Error decrease:", err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
+    }
+  };
 
   return (
     <main className="bg-black min-h-screen">
@@ -58,8 +206,8 @@ export default function Home() {
       </Container>
 
       {selectedProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full relative">
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full relative text-black">
             <button
               onClick={() => setSelectedProduct(null)}
               className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl"
@@ -73,7 +221,7 @@ export default function Home() {
                 alt={selectedProduct.name}
                 width={400}
                 height={250}
-                className="rounded mb-4"
+                className="rounded mb-4 object-contain w-full h-56"
               />
             )}
 
@@ -92,9 +240,9 @@ export default function Home() {
                 </p>
                 <p className="text-green-600 font-bold text-lg">
                   ราคาหลังหักส่วนลด:{" "}
-                  {(
+                  {Math.round(
                     selectedProduct.price *
-                    (1 - selectedProduct.discountPercent / 100)
+                      (1 - selectedProduct.discountPercent / 100)
                   ).toLocaleString()}{" "}
                   บาท
                 </p>
@@ -106,56 +254,47 @@ export default function Home() {
             )}
 
             <p className="text-gray-600">คงเหลือ: {selectedProduct.stock} ชิ้น</p>
-            <p className="mt-2 text-gray-700">{selectedProduct.description}</p>
+            <p className="mt-2 text-gray-700 mb-4">{selectedProduct.description}</p>
 
-            <button
-              onClick={async () => {
-                if (!session?.user?.email) {
-                  router.push("/login");
-                  return;
-                }
+            {/* ---------- เพิ่มปุ่ม + / - แทนปุ่มใส่ตะกร้า ---------- */}
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleDecrease}
+                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded text-lg"
+                  aria-label="ลดจำนวน"
+                >
+                  −
+                </button>
 
-                const discount =
-                  selectedProduct.discountPercent > 0
-                    ? Math.round(
-                        selectedProduct.price *
-                          (1 - selectedProduct.discountPercent / 100)
-                      )
-                    : selectedProduct.price;
+                <div className="min-w-[44px] text-center font-semibold">
+                  {localQty}
+                </div>
 
-                try {
-                  const res = await fetch("/api/cart", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      userId: session.user.email,
-                      product: {
-                        productId: selectedProduct._id,
-                        name: selectedProduct.name,
-                        price: discount,
-                        originalPrice: selectedProduct.price,
-                        discountPercent: selectedProduct.discountPercent,
-                        image: selectedProduct.images?.[0],
-                        quantity: 1,
-                      },
-                    }),
-                  });
+                <button
+                  onClick={handleIncrease}
+                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded text-lg"
+                  aria-label="เพิ่มจำนวน"
+                >
+                  +
+                </button>
+              </div>
 
-                  if (!res.ok) throw new Error("ไม่สามารถเพิ่มสินค้าได้");
-
-                  alert("เพิ่มสินค้าลงตะกร้าแล้ว");
-                  setSelectedProduct(null);
-                } catch (error) {
-                  console.error("เกิดข้อผิดพลาด:", error);
-                  alert("เพิ่มสินค้าไม่สำเร็จ");
-                }
-              }}
-              className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded w-full"
-            >
-              ใส่ตะกร้า
-            </button>
+              <div className="text-sm text-gray-600">
+                รวม:{" "}
+                <span className="font-semibold">
+                  {(
+                    (selectedProduct.discountPercent > 0
+                      ? Math.round(
+                          selectedProduct.price *
+                            (1 - selectedProduct.discountPercent / 100)
+                        )
+                      : selectedProduct.price) * localQty
+                  ).toLocaleString()}{" "}
+                  บาท
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
