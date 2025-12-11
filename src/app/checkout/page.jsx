@@ -19,19 +19,27 @@ export default function CheckoutPage() {
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // โหลดข้อมูลผู้ใช้จาก database
+  const SHIPPING_FEE = 200; // ค่าส่งคงที่
+  const VAT_RATE = 0.07; // 7%
+
+  // โหลดข้อมูลผู้ใช้จาก database (ถ้ามี)
   useEffect(() => {
     const fetchUserInfo = async () => {
       if (!session?.user?.email) return;
 
-      const res = await fetch(`/api/user/profile?email=${session.user.email}`);
-      const data = await res.json();
+      try {
+        const res = await fetch(`/api/user/profile?email=${encodeURIComponent(session.user.email)}`);
+        if (!res.ok) return;
+        const data = await res.json();
 
-      setForm({
-        fullname: data.name || "",
-        address: data.address || "",
-        phone: data.phone || "",
-      });
+        setForm({
+          fullname: data.name || "",
+          address: data.address || "",
+          phone: data.phone || "",
+        });
+      } catch (err) {
+        console.error("โหลดข้อมูลผู้ใช้ล้มเหลว:", err);
+      }
     };
     fetchUserInfo();
   }, [session]);
@@ -42,6 +50,7 @@ export default function CheckoutPage() {
       setLoading(true);
       try {
         const res = await fetch(`/api/cart?userId=${session?.user?.email}`);
+        if (!res.ok) throw new Error("ไม่สามารถโหลดตะกร้าได้");
         const data = await res.json();
         setCart(data);
       } catch (error) {
@@ -52,8 +61,17 @@ export default function CheckoutPage() {
     if (session) fetchCart();
   }, [session]);
 
-  const getTotal = () =>
-    cart?.items?.reduce((sum, item) => sum + item.price * item.quantity, 0) || 0;
+  const calcSubtotal = () =>
+    cart?.items?.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0) || 0;
+
+  const subtotal = calcSubtotal();
+  const vat = +(subtotal * VAT_RATE); // ไม่ปัด เพื่อคำนวณแม่นยำ
+  const shipping = SHIPPING_FEE;
+  const grandTotal = +(subtotal + vat + shipping);
+
+  const formatMoney = (v) =>
+    // ถ้าอยากปัดเป็นจำนวนเต็ม ให้เปลี่ยน .toFixed(2) -> Math.round
+    Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2).toLocaleString();
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -70,25 +88,42 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (!cart || !cart.items || cart.items.length === 0) {
+      alert("❗ ตะกร้าว่าง — ไม่สามารถสั่งซื้อได้");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("user", session.user.email);
     formData.append("fullname", form.fullname);
     formData.append("address", form.address);
     formData.append("phone", form.phone);
-    formData.append("total", getTotal());
+    formData.append("subtotal", subtotal);
+    formData.append("vat", vat.toFixed(2));
+    formData.append("shipping", shipping);
+    formData.append("total", grandTotal.toFixed(2));
     formData.append("slip", slip);
     formData.append("items", JSON.stringify(cart.items));
 
-    const res = await fetch("/api/checkout", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        body: formData,
+      });
 
-    if (res.ok) {
-      alert("✅ สั่งซื้อสำเร็จ!");
-      router.push("/orders/history");
-    } else {
-      alert("เกิดข้อผิดพลาดในการสั่งซื้อ");
+      if (res.ok) {
+        alert("✅ สั่งซื้อสำเร็จ!");
+        // ถ้าต้องการเคลียร์ตะกร้าฝั่ง client ให้เรียก API ล้างตะกร้า (ถ้ามี)
+        // await fetch('/api/cart/clear', { method: 'POST', body: JSON.stringify({ userId: session.user.email }) })
+        router.push("/orders/history");
+      } else {
+        const text = await res.text();
+        console.error("Checkout error:", text);
+        alert("เกิดข้อผิดพลาดในการสั่งซื้อ");
+      }
+    } catch (err) {
+      console.error("Network error:", err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     }
   };
 
@@ -159,31 +194,57 @@ export default function CheckoutPage() {
               />
               <div className="flex-1">
                 <div className="text-sm font-semibold">{item.name}</div>
-                <div className="text-sm text-gray-300">
-                  {item.price.toLocaleString()} บาท × {item.quantity}
-                </div>
+
+                {item.discountPercent > 0 ? (
+                  <>
+                    <div className="text-sm text-gray-400 line-through">
+                      {Number(item.originalPrice).toLocaleString()} บาท × {item.quantity}
+                    </div>
+                    <div className="text-sm text-green-400 font-medium">
+                      {Number(item.price).toLocaleString()} บาท × {item.quantity}
+                      <span className="text-yellow-400 ml-2">🔻 ลด {item.discountPercent}%</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-300">
+                    {Number(item.price).toLocaleString()} บาท × {item.quantity}
+                  </div>
+                )}
               </div>
-              <div className="font-bold text-sm text-right w-24">
-                {(item.price * item.quantity).toLocaleString()} บาท
+              <div className="font-bold text-sm text-right w-28">
+                {(Number(item.price) * Number(item.quantity)).toLocaleString()} บาท
               </div>
             </div>
           ))}
+
           <hr className="my-4 border-gray-700" />
-          <div className="text-right font-bold text-lg">
-            รวมทั้งหมด: {getTotal().toLocaleString()} บาท
+
+          {/* สรุปราคา */}
+          <div className="space-y-2 text-right">
+            <div className="flex justify-between text-sm text-gray-300">
+              <span>Subtotal</span>
+              <span>{subtotal.toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-300">
+              <span>VAT (7%)</span>
+              <span>{vat.toFixed(2).toLocaleString()} บาท</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-300">
+              <span>ค่าจัดส่ง</span>
+              <span>{shipping.toLocaleString()} บาท</span>
+            </div>
+
+            <div className="flex justify-between text-lg font-bold mt-2">
+              <span>รวมทั้งหมด</span>
+              <span>{grandTotal.toFixed(2).toLocaleString()} บาท</span>
+            </div>
           </div>
         </div>
 
         {/* โชว์ QR โอนเงิน */}
         <div className="bg-gray-800 p-4 rounded mb-6 text-center">
           <p className="mb-2">📌 โอนเงินผ่านบัญชีพร้อมเพย์ / ธนาคาร</p>
-          <Image
-            src="/qr.jpg"
-            alt="QR Code"
-            width={200}
-            height={200}
-            className="mx-auto rounded"
-          />
+          <Image src="/qr.jpg" alt="QR Code" width={200} height={200} className="mx-auto rounded" />
         </div>
 
         {/* แนบสลิป */}

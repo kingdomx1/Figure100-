@@ -5,14 +5,10 @@ import { Line } from "react-chartjs-2";
 import "chart.js/auto";
 
 /**
- * Dashboard.jsx
- * - UI ภาษาไทย (ทั้งหมด)
- * - Export PDF: English content, currency label "Bath"
+ * Dashboard.jsx (แก้: เพิ่ม date picker ก่อน export)
  *
- * Required packages:
+ * ติดตั้งแพ็กเกจที่ต้องใช้:
  *   npm install chart.js react-chartjs-2 jspdf jspdf-autotable
- *
- * วางไฟล์นี้เป็น Dashboard.jsx (หรือ DashboardPage.jsx) และรันในโปรเจคของคุณ
  */
 
 export default function Dashboard() {
@@ -21,78 +17,50 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState("daily"); // "daily" | "monthly"
   const [exporting, setExporting] = useState(false);
 
+  // date states for export
+  const today = new Date();
+  const isoToday = today.toISOString().slice(0, 10); // yyyy-mm-dd
+  const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`; // yyyy-mm
+
+  const [selectedDate, setSelectedDate] = useState(isoToday);
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+
   useEffect(() => {
-    // เรียก API ของคุณ — ปรับ endpoint ถ้าจำเป็น
     fetch("/api/admin/orders")
       .then((r) => r.json())
       .then((data) => setOrders(Array.isArray(data) ? data : []))
-      .catch((e) => {
-        console.error("fetch orders error:", e);
-        setOrders([]);
-      });
+      .catch(() => setOrders([]));
 
     fetch("/api/admin/users")
       .then((r) => r.json())
       .then((data) => setUsers(Array.isArray(data) ? data : []))
-      .catch((e) => {
-        console.error("fetch users error:", e);
-        setUsers([]);
-      });
+      .catch(() => setUsers([]));
   }, []);
 
-  const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0);
-  const totalOrders = orders.length;
-  const latestOrder = orders[0];
-
-  // helper: ดึงรายการสินค้าใน order (รองรับหลายโครงสร้าง)
   const extractItemsFromOrder = (order) => {
-    const possibleItemKeys = ["items", "cart", "products", "orderItems", "lineItems"];
-    for (const k of possibleItemKeys) {
+    const keys = ["items", "cart", "products", "orderItems", "lineItems"];
+    for (const k of keys) {
       if (order[k] && Array.isArray(order[k])) return order[k];
     }
     return [];
   };
 
-  // สร้าง rows สำหรับตาราง PDF: [date, buyer, products string, total]
-  const buildReportRows = (filteredOrders) => {
-    return filteredOrders.map((order) => {
-      const dateObj = new Date(order.createdAt || order.created_at || Date.now());
-      const dateStr =
-        viewMode === "daily" ? dateObj.toLocaleDateString("en-GB") : `${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
-      const buyer = order.shipping?.fullname || order.name || order.user || "Unknown Customer";
+  const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0);
+  const totalOrders = orders.length;
+  const latestOrder = orders[0];
 
-      const items = extractItemsFromOrder(order);
-      const itemStrings = items.map((it) => {
-        const name =
-          (it.product && (it.product.title || it.product.name)) ||
-          it.title ||
-          it.name ||
-          it.productName ||
-          "Unknown Product";
-        const qty = Number(it.qty || it.quantity || it.count || 1);
-        const price = Number(it.price || it.unitPrice || it.product?.price || 0);
-        return `${name} x${qty} @${price.toLocaleString()}`;
-      });
-      const itemsText = itemStrings.length > 0 ? itemStrings.join("; ") : "-";
-      const total = order.total || 0;
-      return [dateStr, buyer, itemsText, `${total.toLocaleString()} Bath`];
-    });
-  };
-
-  // สร้างสรุปสินค้า (ชื่อ + จำนวน)
   const productSummary = () => {
     const map = {};
     orders.forEach((order) => {
-      const items = extractItemsFromOrder(order);
-      items.forEach((it) => {
-        const name =
+      extractItemsFromOrder(order).forEach((it) => {
+        const n =
           (it.product && (it.product.title || it.product.name)) ||
           it.title ||
           it.name ||
           it.productName ||
           "Unknown Product";
         const qty = Number(it.qty || it.quantity || it.count || 1);
-        map[name] = (map[name] || 0) + (isNaN(qty) ? 0 : qty);
+        map[n] = (map[n] || 0) + (isNaN(qty) ? 0 : qty);
       });
     });
     return Object.entries(map)
@@ -102,44 +70,49 @@ export default function Dashboard() {
 
   const productList = productSummary();
 
-  // สร้าง data สำหรับกราฟ
   const chartData = () => {
-    const counts = {};
+    const map = {};
     orders.forEach((order) => {
-      const date = new Date(order.createdAt || order.created_at || Date.now());
-      const key =
+      const d = new Date(order.createdAt || order.created_at || Date.now());
+      const k =
         viewMode === "daily"
-          ? date.toLocaleDateString("en-GB")
-          : `${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
-      counts[key] = (counts[key] || 0) + (order.total || 0);
+          ? d.toLocaleDateString("en-GB")
+          : `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+      map[k] = (map[k] || 0) + (order.total || 0);
     });
-
-    const sortedKeys = Object.keys(counts).sort((a, b) => {
-      const parseDate = (str) =>
-        viewMode === "daily" ? new Date(str.split("/").reverse().join("-")) : new Date(`01/${str}`);
-      return parseDate(a) - parseDate(b);
-    });
-
-    const values = sortedKeys.map((k) => counts[k]);
-
+    const keys = Object.keys(map).sort(
+      (a, b) =>
+        new Date(a.split("/").reverse().join("-")) -
+        new Date(b.split("/").reverse().join("-"))
+    );
     return {
-      labels: sortedKeys,
+      labels: keys,
       datasets: [
         {
           label: "ยอดขาย (Bath)",
-          data: values,
-          fill: true,
-          tension: 0.3,
-          backgroundColor: "rgba(99,102,241,0.08)",
+          data: keys.map((k) => map[k]),
           borderColor: "rgb(99,102,241)",
-          pointRadius: 3,
+          backgroundColor: "rgba(99,102,241,0.08)",
+          fill: true,
         },
       ],
     };
   };
 
+  // Helper: parse selected date/month into comparable parts
+  const parseSelected = () => {
+    if (viewMode === "daily") {
+      // selectedDate is 'yyyy-mm-dd'
+      const [y, m, d] = selectedDate.split("-").map((v) => Number(v));
+      return { type: "daily", year: y, month: m - 1, day: d };
+    } else {
+      const [y, mm] = selectedMonth.split("-").map((v) => Number(v));
+      return { type: "monthly", year: y, month: mm - 1 };
+    }
+  };
+
   // =========================
-  // Export PDF (English content, "Bath")
+  // Export PDF (with date/month picker)
   // =========================
   const handleExportPDF = async () => {
     setExporting(true);
@@ -150,60 +123,106 @@ export default function Dashboard() {
         return;
       }
 
-      // dynamic import เพื่อหลีกเลี่ยงปัญหา bundler/SSR
+      const sel = parseSelected();
+
+      // filter orders by selected period
+      let filtered = orders.filter((o) => {
+        const dt = new Date(o.createdAt || o.created_at || Date.now());
+        if (sel.type === "daily") {
+          return (
+            dt.getFullYear() === sel.year &&
+            dt.getMonth() === sel.month &&
+            dt.getDate() === sel.day
+          );
+        } else {
+          return dt.getFullYear() === sel.year && dt.getMonth() === sel.month;
+        }
+      });
+
+      if (!filtered || filtered.length === 0) {
+        alert("ไม่มีคำสั่งซื้อในช่วงเวลาที่เลือกให้ส่งออก");
+        setExporting(false);
+        return;
+      }
+
       const [{ default: jsPDF }, autoTableImport] = await Promise.all([
         import("jspdf"),
-        import("jspdf-autotable").catch((e) => {
-          console.warn("jspdf-autotable dynamic import failed:", e);
-          return null;
-        }),
+        import("jspdf-autotable").catch(() => null),
       ]);
-
-      const autoTable = autoTableImport ? (autoTableImport.default || autoTableImport) : null;
-
+      const autoTable = autoTableImport?.default || autoTableImport;
       if (!jsPDF) throw new Error("ไม่สามารถโหลด jsPDF");
 
       const doc = new jsPDF({ unit: "pt", format: "a4" });
 
-      // Header (ภาษาอังกฤษใน PDF)
-      const modeLabel = viewMode === "daily" ? "Daily" : "Monthly";
-      doc.setFont("Helvetica");
+      // Header with selected period
+      const periodLabel =
+        sel.type === "daily"
+          ? `${String(sel.day).padStart(2, "0")}/${String(sel.month + 1).padStart(2, "0")}/${sel.year}`
+          : `${String(sel.month + 1).padStart(2, "0")}/${sel.year}`;
+
       doc.setFontSize(14);
-      doc.text(`Sales Report (${modeLabel})`, 40, 50);
+      doc.text(`Sales Report (${sel.type === "daily" ? "Daily" : "Monthly"}) - ${periodLabel}`, 40, 50);
       doc.setFontSize(10);
       doc.text(`Generated at: ${new Date().toLocaleString("en-GB")}`, 40, 66);
-      doc.text(`Total Revenue: ${totalRevenue.toLocaleString()} Bath`, 40, 82);
 
-      // สร้าง rows จาก orders
-      const rows = buildReportRows(orders);
+      // build rows and summary from filtered orders
+      const rows = [];
+      let grandTotalRevenue = 0;
+      let grandItemsCount = 0;
+      const productCounts = {};
 
-      // เรียกใช้ autoTable (สองรูปแบบ) หรือ fallback เป็น text
-      if (typeof doc.autoTable === "function") {
-        doc.autoTable({
-          startY: 100,
-          head: [["Date", "Buyer", "Products", "Total (Bath)"]],
-          body: rows,
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [41, 98, 255] },
-          columnStyles: { 2: { cellWidth: 240 } },
+      filtered.forEach((order) => {
+        const dt = new Date(order.createdAt || order.created_at || Date.now());
+        const dateStr = dt.toLocaleDateString("en-GB");
+        const buyer = order.shipping?.fullname || order.name || order.user || "Unknown Customer";
+
+        const items = extractItemsFromOrder(order);
+        let itemsTotal = 0;
+        let orderItemsCount = 0;
+
+        const itemStrings = items.map((it) => {
+          const name =
+            (it.product && (it.product.title || it.product.name)) ||
+            it.title ||
+            it.name ||
+            it.productName ||
+            "Unknown Product";
+          const qty = Number(it.qty || it.quantity || it.count || 1);
+          const price = Number(it.price || it.unitPrice || it.product?.price || 0);
+          orderItemsCount += isNaN(qty) ? 0 : qty;
+          itemsTotal += (isNaN(qty) ? 0 : qty) * (isNaN(price) ? 0 : price);
+          productCounts[name] = (productCounts[name] || 0) + (isNaN(qty) ? 0 : qty);
+          return `${name} x${qty} @${price.toLocaleString()}`;
         });
-      } else if (typeof autoTable === "function") {
+
+        grandItemsCount += orderItemsCount;
+        grandTotalRevenue += Number(order.total || 0);
+
+        rows.push([
+          dateStr,
+          buyer,
+          itemStrings.length ? itemStrings.join("; ") : "-",
+          `${itemsTotal.toLocaleString()} Bath`,
+          `${(order.total || 0).toLocaleString()} Bath`,
+        ]);
+      });
+
+      // render table
+      if (autoTable) {
         autoTable(doc, {
-          startY: 100,
-          head: [["Date", "Buyer", "Products", "Total (Bath)"]],
+          startY: 90,
+          head: [["Date", "Buyer", "Products", "Items Total (Bath)", "Order Total (Bath)"]],
           body: rows,
           styles: { fontSize: 9 },
-          headStyles: { fillColor: [41, 98, 255] },
-          columnStyles: { 2: { cellWidth: 240 } },
+          columnStyles: { 2: { cellWidth: 200 } },
         });
       } else {
-        // fallback: plain text
         doc.setFontSize(9);
-        let y = 100;
-        doc.text("Date | Buyer | Products | Total (Bath)", 40, y);
+        let y = 90;
+        doc.text("Date | Buyer | Products | ItemsTotal | OrderTotal", 40, y);
         y += 14;
         rows.forEach((r) => {
-          const line = `${r[0]} | ${r[1]} | ${r[2].slice(0, 120)} | ${r[3]}`;
+          const line = `${r[0]} | ${r[1]} | ${r[2].slice(0, 120)} | ${r[3]} | ${r[4]}`;
           doc.text(line, 40, y);
           y += 12;
           if (y > 760) {
@@ -213,91 +232,46 @@ export default function Dashboard() {
         });
       }
 
-      // เพจถัดไป: สรุปยอดขายตามสินค้า
-      const productCounts = {};
-      orders.forEach((order) => {
-        extractItemsFromOrder(order).forEach((it) => {
-          const name =
-            (it.product && (it.product.title || it.product.name)) ||
-            it.title ||
-            it.name ||
-            it.productName ||
-            "Unknown Product";
-          const qty = Number(it.qty || it.quantity || it.count || 1);
-          productCounts[name] = (productCounts[name] || 0) + (isNaN(qty) ? 0 : qty);
-        });
-      });
+      // summary page
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text("Overall Summary", 40, 50);
+      doc.setFontSize(10);
+      doc.text(`Total Revenue (sum of orders): ${grandTotalRevenue.toLocaleString()} Bath`, 40, 70);
+      doc.text(`Total Items Sold (sum of quantities): ${grandItemsCount.toLocaleString()} pcs`, 40, 86);
+      doc.text(`Unique Products Sold: ${Object.keys(productCounts).length}`, 40, 102);
 
       const productRows = Object.entries(productCounts).map(([name, qty]) => [name, qty.toString()]);
-      if (productRows.length > 0) {
-        doc.addPage();
-        doc.setFontSize(12);
-        doc.text("Product Summary (Total Sold)", 40, 50);
-        if (typeof doc.autoTable === "function") {
-          doc.autoTable({
-            head: [["Product", "Quantity Sold"]],
-            body: productRows,
-            startY: 80,
-            styles: { fontSize: 10 },
-          });
-        } else if (typeof autoTable === "function") {
-          autoTable(doc, {
-            head: [["Product", "Quantity Sold"]],
-            body: productRows,
-            startY: 80,
-            styles: { fontSize: 10 },
-          });
-        } else {
-          let y = 80;
-          productRows.forEach((r) => {
-            doc.text(`${r[0]} — ${r[1]} pcs`, 40, y);
-            y += 14;
-            if (y > 760) {
-              doc.addPage();
-              y = 40;
-            }
-          });
-        }
+      if (autoTable) {
+        autoTable(doc, {
+          head: [["Product", "Quantity Sold"]],
+          body: productRows,
+          startY: 130,
+          styles: { fontSize: 10 },
+        });
+      } else {
+        let y = 130;
+        productRows.forEach((r) => {
+          doc.text(`${r[0]} — ${r[1]} pcs`, 40, y);
+          y += 14;
+          if (y > 760) {
+            doc.addPage();
+            y = 40;
+          }
+        });
       }
 
-      // ดาวน์โหลดไฟล์ไปยังผู้ใช้
-      const filename = `sales_report_${viewMode}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      const filename = `sales_report_${sel.type}_${periodLabel.replace(/\//g, "-")}.pdf`;
       doc.save(filename);
-      console.log("PDF สร้างแล้ว:", filename);
-
-      // (Optional) พยายามอัปโหลดไฟล์ไปยัง server endpoint ถ้ามี
-      try {
-        const pdfBlob = doc.output && typeof doc.output === "function" ? doc.output("blob") : null;
-        if (pdfBlob) {
-          const fd = new FormData();
-          fd.append("report", pdfBlob, filename);
-          fd.append("mode", viewMode);
-          // POST ไป /api/admin/upload-report หากมี endpoint
-          const resp = await fetch("/api/admin/upload-report", {
-            method: "POST",
-            body: fd,
-          });
-          console.log("Upload response status:", resp.status);
-          const text = await resp.text();
-          console.log("Upload response body:", text);
-        } else {
-          console.warn("ไม่สามารถสร้าง pdf blob สำหรับการอัปโหลดได้");
-        }
-      } catch (uploadErr) {
-        console.warn("การอัปโหลด PDF ล้มเหลว (เป็นขั้นตอนเสริม):", uploadErr);
-      }
 
       setExporting(false);
     } catch (err) {
-      console.error("เกิดข้อผิดพลาดขณะสร้าง/ส่งออก PDF:", err);
+      console.error("Export PDF error:", err);
       alert("ส่งออก PDF ล้มเหลว — ดู console สำหรับรายละเอียด");
       setExporting(false);
     }
   };
 
-  // =========================
-  // UI ภาษาไทย
-  // =========================
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6">
       <div className="max-w-[1200px] mx-auto">
@@ -306,7 +280,7 @@ export default function Dashboard() {
           <div className="text-sm text-gray-500">สวัสดี, ผู้ดูแลระบบ</div>
         </header>
 
-        {/* สรุปและปุ่มส่งออก */}
+        {/* Summary + export controls */}
         <div className="flex items-center justify-between mb-4 gap-4">
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 flex-1">
             <div className="bg-white rounded-xl p-4 shadow-sm border">
@@ -314,43 +288,59 @@ export default function Dashboard() {
               <p className="text-2xl font-bold mt-2">{totalRevenue.toLocaleString()} บาท</p>
               <p className="text-xs text-gray-400 mt-1">{totalOrders} รายการ</p>
             </div>
+
             <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-xs text-gray-400">จำนวนผู้ใช้งาน</p>
               <p className="text-2xl font-bold mt-2">{users.length.toLocaleString()} คน</p>
             </div>
+
             <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-xs text-gray-400">คำสั่งซื้อล่าสุด</p>
               <p className="text-lg font-semibold mt-2">{latestOrder?.shipping?.fullname || "ยังไม่มีคำสั่งซื้อ"}</p>
             </div>
+
             <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-xs text-gray-400">สินค้าคงเหลือ (รวม)</p>
               <p className="text-2xl font-bold mt-2">—</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2 items-center">
             <select value={viewMode} onChange={(e) => setViewMode(e.target.value)} className="border rounded px-2 py-1 text-sm">
               <option value="daily">รายวัน</option>
               <option value="monthly">รายเดือน</option>
             </select>
 
-            <button onClick={handleExportPDF} disabled={exporting} className="bg-indigo-600 text-white px-3 py-2 rounded-md text-sm">
+            {/* date/month picker */}
+            {viewMode === "daily" ? (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              />
+            ) : (
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              />
+            )}
+
+            <button onClick={handleExportPDF} disabled={exporting} className="bg-indigo-600 text-white px-3 py-2 rounded">
               {exporting ? "กำลังส่งออก..." : "ส่งออก"}
             </button>
           </div>
         </div>
 
-        {/* กราฟ */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">📈 กราฟยอดขาย</h2>
-          </div>
+          <h2 className="text-xl font-semibold mb-4">📈 กราฟยอดขาย</h2>
           <div className="h-[420px]">
             <Line data={chartData()} />
           </div>
         </div>
 
-        {/* รายการคำสั่งซื้อ + สรุปสินค้า */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border">
             <h3 className="text-lg font-semibold mb-3">🕒 คำสั่งซื้อล่าสุด</h3>
@@ -359,9 +349,7 @@ export default function Dashboard() {
                 <li key={order._id || order.id} className="py-3 flex justify-between items-center">
                   <div>
                     <div className="font-medium">{order.shipping?.fullname || order.name || "ลูกค้า"}</div>
-                    <div className="text-xs text-gray-400">
-                      {new Date(order.createdAt || order.created_at || Date.now()).toLocaleString("en-GB")}
-                    </div>
+                    <div className="text-xs text-gray-400">{new Date(order.createdAt || order.created_at || Date.now()).toLocaleString("en-GB")}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-semibold">{(order.total || 0).toLocaleString()} บาท</div>
