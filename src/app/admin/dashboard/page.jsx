@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import AdminSidebar from "../../components/AdminSidebar";
+import AdminSidebar from "../../components/Adminsidebar";
 import ProductsManager from "../../components/ProductsManager";
 import OrdersManager from "../../components/OrdersManager";
 import Dashboard from "../../components/Dashboard";
