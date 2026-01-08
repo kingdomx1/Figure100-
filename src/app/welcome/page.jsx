@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams, redirect } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
 import Container from "../components/Container";
@@ -9,14 +9,14 @@ import Navbar from "../components/Navbar";
 
 export default function WelcomePage() {
   const { data: session } = useSession();
+  const isLoggedIn = !!session?.user;
   const searchParams = useSearchParams();
 
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [quantity, setQuantity] = useState(1); // จำนวนที่จะใส่ตะกร้า
+  const [quantity, setQuantity] = useState(1);
 
-  if (!session) redirect("/login");
-
+  // ================= โหลดสินค้า =================
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -32,117 +32,90 @@ export default function WelcomePage() {
         const res = await fetch(`/api/admin/products?${query}`);
         const data = await res.json();
         setProducts(data);
-      } catch (error) {
-        console.error("เกิดข้อผิดพลาดในการโหลดสินค้า:", error);
+      } catch (err) {
+        console.error("โหลดสินค้าล้มเหลว:", err);
       }
     };
 
     fetchProducts();
   }, [searchParams]);
 
-  // เมื่อเปิด modal สินค้า ให้รีเซ็ต quantity เป็น 1
+  // reset จำนวน
   useEffect(() => {
     if (selectedProduct) setQuantity(1);
   }, [selectedProduct]);
 
   const inc = () => {
     if (!selectedProduct) return;
-    const stock = selectedProduct.stock ?? Infinity;
-    setQuantity((q) => {
-      const next = q + 1;
-      if (next > stock) {
-        alert(`ไม่สามารถเพิ่มได้ — มีสต็อกเพียง ${stock} ชิ้น`);
-        return q;
-      }
-      return next;
-    });
+    if (quantity < selectedProduct.stock) {
+      setQuantity((q) => q + 1);
+    }
   };
 
-  const dec = () => {
-    setQuantity((q) => Math.max(1, q - 1));
-  };
+  const dec = () => setQuantity((q) => Math.max(1, q - 1));
 
+  // ================= ใส่ตะกร้า =================
   const handleAddToCart = async () => {
-    if (!session?.user?.email) {
-      alert("กรุณาเข้าสู่ระบบก่อน");
-      return;
-    }
-    if (!selectedProduct) return;
+    if (!isLoggedIn || !selectedProduct) return;
 
-    const stock = selectedProduct.stock ?? Infinity;
-    if (quantity > stock) {
-      alert(`จำนวนที่เลือกมากกว่าจำนวนสต็อก (มี ${stock} ชิ้น)`);
-      return;
-    }
+    await fetch("/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: session.user.email,
+        product: {
+          productId: selectedProduct._id,
+          name: selectedProduct.name,
+          price: selectedProduct.finalPrice,
+          originalPrice: selectedProduct.price,
+          discountPercent: selectedProduct.isDiscountActive
+            ? selectedProduct.discountPercent
+            : 0,
+          image: selectedProduct.images?.[0],
+          quantity,
+        },
+      }),
+    });
 
-    const discountPercent = selectedProduct.discountPercent || 0;
-    const discountedPrice = discountPercent > 0
-      ? Math.round(selectedProduct.price * (1 - discountPercent / 100))
-      : selectedProduct.price;
-
-    const productPayload = {
-      productId: selectedProduct._id,
-      name: selectedProduct.name,
-      price: discountedPrice,
-      originalPrice: selectedProduct.price,
-      discountPercent,
-      image: selectedProduct.images?.[0] || "",
-      quantity,
-    };
-
-    try {
-      const res = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: session.user.email,
-          product: productPayload,
-        }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("เพิ่มสินค้าไม่สำเร็จ:", text);
-        alert("ไม่สามารถเพิ่มสินค้าได้ กรุณาลองใหม่");
-        return;
-      }
-
-      alert("เพิ่มสินค้าลงตะกร้าแล้ว");
-      setSelectedProduct(null);
-    } catch (err) {
-      console.error("Error add to cart:", err);
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
-    }
+    alert("เพิ่มสินค้าลงตะกร้าแล้ว");
+    setSelectedProduct(null);
   };
 
   return (
     <main className="bg-black min-h-screen">
       <Navbar />
+
       <Container>
         <h1 className="text-white text-3xl font-bold text-center py-10">
-          สินค้าแนะนำ
+          สินค้า
         </h1>
 
         {products.length === 0 ? (
-          <p className="text-center text-white">ไม่พบสินค้าที่ตรงกับหมวดหมู่</p>
+          <p className="text-center text-white">ไม่พบสินค้า</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-9">
             {products.map((product) => (
               <div
                 key={product._id}
-                className="relative group rounded-xl overflow-hidden shadow-md cursor-pointer bg-white transition-transform duration-300 hover:scale-105"
                 onClick={() => setSelectedProduct(product)}
+                className="relative group rounded-xl overflow-hidden shadow-md cursor-pointer bg-white hover:scale-105 transition"
               >
-                {product.images?.[0] && (
-                  <Image
-                    src={product.images[0]}
-                    alt={product.name}
-                    width={400}
-                    height={300}
-                    className="w-full h-64 object-cover rounded-xl transition-all duration-300"
-                  />
+                {/* 🔻 badge ส่วนลด */}
+                {product.isDiscountActive && product.discountPercent > 0 && (
+                  <div className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2 py-1 rounded z-10">
+                    ลด {product.discountPercent}%
+                  </div>
                 )}
-                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-center py-2 opacity-0 group-hover:opacity-100 transition duration-300">
+
+                <Image
+                  src={product.images?.[0] || "/no-image.png"}
+                  alt={product.name}
+                  width={400}
+                  height={300}
+                  className="w-full h-64 object-cover"
+                />
+
+                <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-center py-2 opacity-0 group-hover:opacity-100">
                   {product.name}
                 </div>
               </div>
@@ -151,103 +124,94 @@ export default function WelcomePage() {
         )}
       </Container>
 
-      {/* Modal แสดงรายละเอียดสินค้า */}
+      {/* ================= MODAL ================= */}
       {selectedProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full relative text-black">
+        <div className="fixed inset-0 bg-black/70 z-50 flex justify-center items-start overflow-y-auto py-10">
+          <div className="bg-white w-full max-w-3xl rounded-xl p-6 relative">
             <button
               onClick={() => setSelectedProduct(null)}
-              className="absolute top-2 right-2 text-gray-500 hover:text-black text-xl"
+              className="absolute top-3 right-3 text-xl"
             >
               ✕
             </button>
 
-            {selectedProduct.images?.[0] && (
+            <div className="flex flex-col md:flex-row gap-6">
               <Image
-                src={selectedProduct.images[0]}
+                src={selectedProduct.images?.[0] || "/no-image.png"}
                 alt={selectedProduct.name}
                 width={400}
-                height={250}
-                className="rounded mb-4 object-contain w-full h-56"
+                height={400}
+                className="rounded w-full md:w-1/2 object-contain"
               />
-            )}
 
-            <h2 className="text-2xl font-bold mb-2">{selectedProduct.name}</h2>
-            <p className="text-gray-600 mb-1">
-              Studio: {selectedProduct.studio} - {selectedProduct.title}
-            </p>
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold mb-2">
+                  {selectedProduct.name}
+                </h2>
 
-            {/* ราคาพร้อมส่วนลด */}
-            {selectedProduct.discountPercent > 0 ? (
-              <div className="mb-1">
-                <p className="text-red-600 font-semibold">
-                  🔻 ลด {selectedProduct.discountPercent}%
+                <p className="text-gray-600 mb-1">
+                  {selectedProduct.studio} - {selectedProduct.title}
                 </p>
-                <p className="text-gray-400 line-through">
-                  ราคาเดิม: {selectedProduct.price.toLocaleString()} บาท
-                </p>
-                <p className="text-green-600 font-bold text-lg">
-                  ราคาหลังหักส่วนลด:{" "}
-                  {Math.round(
-                    selectedProduct.price *
-                      (1 - selectedProduct.discountPercent / 100)
-                  ).toLocaleString()}{" "}
-                  บาท
-                </p>
-              </div>
-            ) : (
-              <p className="text-gray-800 font-semibold mb-1">
-                ราคา: {selectedProduct.price.toLocaleString()} บาท
-              </p>
-            )}
 
-            <p className="text-gray-600 mb-3">คงเหลือ: {selectedProduct.stock} ชิ้น</p>
-            <p className="mt-2 text-gray-700 mb-4">{selectedProduct.description}</p>
+                {/* ===== ราคา ===== */}
+                {selectedProduct.isDiscountActive &&
+                selectedProduct.discountPercent > 0 ? (
+                  <>
+                    <p className="text-red-600 font-semibold">
+                      🔻 ลด {selectedProduct.discountPercent}%
+                    </p>
+                    <p className="text-gray-400 line-through">
+                      ราคาเดิม {selectedProduct.price.toLocaleString()} บาท
+                    </p>
+                    <p className="text-green-600 font-bold text-lg">
+                      ราคาหลังหักส่วนลด{" "}
+                      {selectedProduct.finalPrice.toLocaleString()} บาท
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-semibold text-lg">
+                    ราคา {selectedProduct.price.toLocaleString()} บาท
+                  </p>
+                )}
 
-            {/* จำนวน (+ / -) */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex items-center border rounded overflow-hidden">
-                <button
-                  onClick={dec}
-                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300"
-                  aria-label="ลดจำนวน"
-                >
-                  −
-                </button>
-                <div className="px-4 py-2 min-w-[48px] text-center font-semibold bg-white">
-                  {quantity}
+                <p className="text-sm text-gray-500 mb-3">
+                  คงเหลือ {selectedProduct.stock} ชิ้น
+                </p>
+
+                <p className="mb-4 text-gray-700">
+                  {selectedProduct.description}
+                </p>
+
+                {/* จำนวน */}
+                <div className="flex items-center gap-4">
+                  <button onClick={dec} className="px-3 py-1 bg-gray-200">
+                    −
+                  </button>
+                  <span className="font-bold">{quantity}</span>
+                  <button onClick={inc} className="px-3 py-1 bg-gray-200">
+                    +
+                  </button>
                 </div>
-                <button
-                  onClick={inc}
-                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300"
-                  aria-label="เพิ่มจำนวน"
-                >
-                  +
-                </button>
-              </div>
 
-              <div className="text-sm text-gray-500">
-                <div>รวม:{" "}<span className="font-semibold">
-                  {(
-                    (selectedProduct.discountPercent > 0
-                      ? Math.round(
-                          selectedProduct.price *
-                            (1 - selectedProduct.discountPercent / 100)
-                        )
-                      : selectedProduct.price) * quantity
-                  ).toLocaleString()} บาท
-                </span></div>
-                <div className="text-xs text-gray-400"></div>
+                <div className="mt-4 font-semibold">
+                  รวม{" "}
+                  {(selectedProduct.finalPrice * quantity).toLocaleString()} บาท
+                </div>
+
+                {!isLoggedIn ? (
+                  <p className="text-red-500 mt-4 text-sm">
+                    * กรุณาเข้าสู่ระบบเพื่อสั่งซื้อสินค้า
+                  </p>
+                ) : (
+                  <button
+                    onClick={handleAddToCart}
+                    className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded w-full"
+                  >
+                    ใส่ตะกร้า
+                  </button>
+                )}
               </div>
             </div>
-
-            {/* ปุ่มใส่ตะกร้า */}
-            <button
-              onClick={handleAddToCart}
-              className="mt-2 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded w-full"
-            >
-              ใส่ตะกร้า
-            </button>
           </div>
         </div>
       )}

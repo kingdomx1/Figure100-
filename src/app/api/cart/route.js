@@ -4,42 +4,75 @@ import Product from "../../../../models/Product";
 import Discount from "../../../../models/Discount";
 import { NextResponse } from "next/server";
 
+/* ===================== helpers ===================== */
+function getThailandNow() {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000);
+}
+
+function endOfDayThailand(date) {
+  const d = new Date(date);
+  d.setUTCHours(16, 59, 59, 999); // 23:59:59 TH
+  return d;
+}
+
+/* ===================== GET ===================== */
 export async function GET(req) {
   await connectMongoDB();
+
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get("userId");
 
   const cart = await Cart.findOne({ userId }) || { items: [] };
-  const productIds = cart.items.map((item) => item.productId);
+  const productIds = cart.items.map((i) => i.productId);
 
-  // ดึงข้อมูลสินค้าจาก productId ที่อยู่ในตะกร้า
   const products = await Product.find({ _id: { $in: productIds } });
   const discounts = await Discount.find({});
+  const nowTH = getThailandNow();
 
-  // รวมข้อมูล product + discount
-  const enrichedItems = cart.items.map((item) => {
-    const product = products.find((p) => p._id.toString() === item.productId);
+  const items = cart.items.map((item) => {
+    const product = products.find(
+      (p) => p._id.toString() === item.productId
+    );
     if (!product) return null;
 
-    const discount = discounts.find((d) => d.title === product.title);
-    const discountPercent = discount ? discount.discountPercent : 0;
-    const discountedPrice = Math.round(product.price * (1 - discountPercent / 100));
+    const discount = discounts.find((d) => {
+      if (d.title !== product.title) return false;
+
+      if (d.startDate) {
+        const startTH = new Date(d.startDate.getTime() + 7 * 60 * 60 * 1000);
+        if (nowTH < startTH) return false;
+      }
+
+      if (d.endDate) {
+        if (nowTH > endOfDayThailand(d.endDate)) return false;
+      }
+
+      return true;
+    });
+
+    const discountPercent = discount?.discountPercent || 0;
+    const finalPrice =
+      discountPercent > 0
+        ? Math.round(product.price * (1 - discountPercent / 100))
+        : product.price;
 
     return {
       productId: product._id,
       name: product.name,
       title: product.title,
-      image: product.images?.[0] || "/no-image.png",
+      image: product.images?.[0] || "",
       quantity: item.quantity,
       originalPrice: product.price,
       discountPercent,
-      price: discountedPrice,
+      price: finalPrice,
+      stock: product.stock,
     };
   }).filter(Boolean);
 
-  return NextResponse.json({ items: enrichedItems });
+  return NextResponse.json({ items });
 }
 
+/* ===================== POST (ใส่ตะกร้า) ===================== */
 export async function POST(req) {
   await connectMongoDB();
   const { userId, product } = await req.json();
@@ -47,14 +80,21 @@ export async function POST(req) {
   let cart = await Cart.findOne({ userId });
   if (!cart) cart = new Cart({ userId, items: [] });
 
-  const existingItem = cart.items.find((item) => item.productId === product.productId);
-  if (existingItem) existingItem.quantity += product.quantity;
-  else cart.items.push(product);
+  const exist = cart.items.find(
+    (i) => i.productId === product.productId
+  );
+
+  if (exist) {
+    exist.quantity += product.quantity;
+  } else {
+    cart.items.push(product);
+  }
 
   await cart.save();
-  return NextResponse.json({ message: "เพิ่มสินค้าลงตะกร้าแล้ว" });
+  return NextResponse.json({ success: true });
 }
 
+/* ===================== DELETE (ลบสินค้า) ===================== */
 export async function DELETE(req) {
   await connectMongoDB();
   const { userId, productId } = await req.json();
@@ -64,5 +104,5 @@ export async function DELETE(req) {
     { $pull: { items: { productId } } }
   );
 
-  return NextResponse.json({ message: "ลบสินค้าแล้ว" });
+  return NextResponse.json({ success: true });
 }

@@ -362,7 +362,7 @@ export default function Dashboard() {
 
           <aside className="bg-white rounded-2xl p-4 shadow-sm border">
             <div className="mb-4">
-              <p className="text-xs text-gray-400">กำไร / สรุปสินค้า</p>
+              <p className="text-xs text-gray-400">สรุปสินค้า</p>
               <p className="text-xl font-bold">{totalRevenue.toLocaleString()} บาท</p>
             </div>
 
